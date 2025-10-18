@@ -10,12 +10,16 @@
   },
   "dependencies": {
     "mathjs": "^15.0.0",
+    "mathlive": "^0.107.1",
     "preact": "^10.27.2",
-    "preact-custom-element": "^4.5.1"
+    "preact-custom-element": "^4.5.1",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",
+    "@types/mathjs": "^9.4.1",
     "@types/node": "^24.6.0",
+    "@types/three": "^0.180.0",
     "typescript": "~5.9.3",
     "vite": "^7.1.7"
   }

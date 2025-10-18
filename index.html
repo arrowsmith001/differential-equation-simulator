@@ -1,13 +1,47 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>differential-engine</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>differential-engine</title>
+
+</head>
+
+<body>
+
+  <div id="app"></div>
+  <div style="flex-direction: row; display: flex;">
+
+  <div style="flex-direction: column; display: flex;">
+
+    <math-field id="eq1" style="margin: 4px;">
+      \frac{dy}{dt}=-x
+    </math-field>
+    <math-field id="eq2" style="margin: 4px;">
+      \frac{dx}{dt}=y
+    </math-field>
+
+    <button id="stepBtn">Step</button>
+
+  </div>
+  <div id="plot" style="width:50vw; height:50vh; border:1px solid #ccc;"></div>
+
+  </div>
+
+
+
+  <script type="module" src="/src/main.tsx"></script>
+
+  <script type="module">
+    window.addEventListener("DOMContentLoaded", () =>
+      import("https://esm.run/mathlive").then((mathlive) =>
+        mathlive.renderMathInDocument(),
+      ),
+    );
+  </script>
+
+</body>
+
 </html>

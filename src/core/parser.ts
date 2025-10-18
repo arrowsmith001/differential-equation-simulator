@@ -1,58 +1,76 @@
 import { create, all } from "mathjs";
-import type { DifferentialSystem } from "./types";
+import type { Equation } from "./types";
 
 const math = create(all);
 
-export function parseSystem(expr: string): DifferentialSystem {
-  // normalize and split
-  const raw = expr
-    .normalize?.("NFKC") ?? expr; // safe if normalize exists
-  const eqns = raw.split(";").map(e => e.trim()).filter(e => e.length > 0);
+export function parseSystem(expr: string) {
+  const eqns = expr
+    .normalize("NFKC")
+    .replace(/[−–—]/g, "-")
+    .split(";")
+    .map(e => e.trim())
+    .filter(Boolean);
 
-  const compiled: { varName: string; node: any; compiledFn: any }[] = [];
+  const compiled: Equation[] = [];
 
   for (const e of eqns) {
-    const [lhsRaw, rhsRaw] = e.split("=").map(s => s && s.trim());
-    if (!lhsRaw || !rhsRaw) throw new Error(`Bad equation: ${String(e)}`);
+    const [lhsRaw, rhsRaw] = e.split("=").map(s => s.trim());
+    if (!lhsRaw || !rhsRaw) throw new Error(`Invalid equation: ${e}`);
 
-    // --- CORRECT REGEX: capture variable name after leading 'd' ---
-    const match = lhsRaw.match(/^d([A-Za-z_]\w*)\/d[tT]$/);
-    if (!match) throw new Error(`Invalid LHS: ${lhsRaw}`);
-    const variable = match[1]; // <-- 'x' for 'dx/dt'
-    // ------------------------------------------------------------
+    // normalize variable names
+    const lhs = lhsRaw.replace(/[𝑥]/g, "x").replace(/[𝑦]/g, "y").replace(/[𝑡]/g, "t");
+    const rhs = rhsRaw.replace(/[𝑥]/g, "x").replace(/[𝑦]/g, "y").replace(/[𝑡]/g, "t");
 
-    // Optionally sanitize rhsRaw for unicode math characters here if needed
-    const rhs = rhsRaw; // assume sanitized earlier
+    // Identify derivative term on either side
+    const derivativeRegex = /d([A-Za-z_]\w*)\/d[tT]/;
 
-    // parse node (for better logging) and compile once
-    const node = math.parse(rhs);
-    const compiledFn = node.compile();
+    let derivativeVar: string | undefined;
+    let exprStr: string;
 
-    console.log("Parsed equation:", { lhs: lhsRaw, variable, rhs });
-    console.log("RHS AST (toString):", node.toString());
+    const lhsMatch = lhs.match(derivativeRegex);
+    const rhsMatch = rhs.match(derivativeRegex);
 
-    compiled.push({ varName: variable, node, compiledFn });
+    if (lhsMatch) {
+      derivativeVar = lhsMatch[1];
+      // move all other terms to RHS
+      exprStr = `${rhs} - (${lhs.replace(lhsMatch[0], "0")})`;
+    } else if (rhsMatch) {
+      derivativeVar = rhsMatch[1];
+      exprStr = `${lhs} - (${rhs.replace(rhsMatch[0], "0")})`;
+    } else {
+      // no derivative, just a general expression
+      exprStr = `${lhs} - (${rhs})`;
+    }
+
+    const fn = math.compile(exprStr);
+
+    compiled.push({ derivativeVar, fn, raw: e });
   }
 
-  const variables = compiled.map(c => c.varName);
+  const variables = compiled
+    .filter(c => c.derivativeVar)
+    .map(c => c.derivativeVar!) // non-null
+    .filter((v, i, arr) => arr.indexOf(v) === i); // unique
+
+  console.log('variables: ' + JSON.stringify(variables));
 
   return {
     variables,
-    fn: (state, t) => {
+    equations: compiled,
+    fn: (state: Record<string, number>, t: number) => {
       const scope = { ...state, t };
       const result: Record<string, number> = {};
 
-      for (const { varName, compiledFn } of compiled) {
-        // evaluate exactly once and reuse the numeric value
-        const numeric = compiledFn.evaluate(scope);
-        if (!isFinite(numeric)) {
-          console.warn(`Non-finite derivative for ${varName} with scope:`, scope, "->", numeric);
+      for (const eq of compiled) {
+        const val = eq.fn.evaluate(scope);
+        if (eq.derivativeVar) {
+          result[`d${eq.derivativeVar}/dt`] = val;
+        } else {
+          // general expression; store under raw string for reference
+          result[eq.raw] = val;
         }
-        // proper key format 'dx/dt'
-        const key = `d${varName}/dt`;
-        console.log(`EVAL ${key} :=`, numeric);
-        result[key] = numeric;
       }
+
       return result;
     }
   };
