@@ -1,26 +1,11 @@
-import type { DifferentialSystem } from "./types";
+import { DifferentialSystem } from "./parser";
+import type { VectorSystem, State } from "./types";
 
-export function eulerStep(sys: DifferentialSystem, state: Record<string, number>, t: number, dt: number) {
-  const diff = sys.fn(state, t);
-  const next = { ...state };
+export function eulerStep(sys: DifferentialSystem, state: State, t: number, dt: number): State {
 
-    console.log('eulerStep diff: ' + JSON.stringify(diff));
-
-  for (const key in diff) {
-    const match = key.match(/^d(\w+)\/dt$/);
-    if (!match) throw new Error(`Bad derivative key: ${key}`);
-    const varName = match[1]; // x, y, etc.
-
-    console.log('varName: ' + varName);
-
-    // sanity check: state must have this variable
-    if (typeof state[varName] !== "number") {
-      console.warn(`Missing variable in state: ${varName}`);
-      next[varName] = diff[key] * dt; // init to derivative*dt
-    } else {
-      next[varName] = state[varName] + diff[key] * dt;
-    }
+  const nextState: State = {};
+  for (const v of sys.variables) {
+    nextState[v] = state[v] + dt * sys.derivatives[v](state, t);
   }
-
-  return next;
+  return nextState;
 }

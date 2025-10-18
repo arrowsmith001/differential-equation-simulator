@@ -1,77 +1,98 @@
-import { create, all } from "mathjs";
-import type { Equation } from "./types";
+
+import { create, all, MathNode, EvalFunction } from "mathjs";
 
 const math = create(all);
 
-export function parseSystem(expr: string) {
-  const eqns = expr
-    .normalize("NFKC")
-    .replace(/[−–—]/g, "-")
+type CompiledEquation = {
+  variable: string;
+  fn: any;
+};
+
+const compiled: CompiledEquation[] = [];
+
+// ---------------------- Types ----------------------
+export type State = Record<string, number>;
+
+export interface DifferentialSystem {
+  variables: string[];
+  indepVar: string;
+  derivatives: Record<string, (state: State, t: number) => number>;
+  initialState: State;
+}
+
+// ---------------------- Helper: normalize derivatives ----------------------
+function normalizeDerivatives(input: string): string[] {
+  return input
     .split(";")
-    .map(e => e.trim())
-    .filter(Boolean);
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => s.replace(/\(\s*d\s*([A-Za-z_]\w*)\s*\)\s*\/\s*\(\s*d\s*t\s*\)/g, "d$1/dt")) // (d y)/(d t) -> dy/dt
+    .map(s => s.replace(/[−–—]/g, "-")) // replace unicode minus
+    .map(s => s.replace(/\s+/g, "")); // remove whitespace
+}
 
-  const compiled: Equation[] = [];
+// ---------------------- Main parser ----------------------
+export function parseSystem(input: string): DifferentialSystem {
+  const eqns = normalizeDerivatives(input);
 
-  for (const e of eqns) {
-    const [lhsRaw, rhsRaw] = e.split("=").map(s => s.trim());
-    if (!lhsRaw || !rhsRaw) throw new Error(`Invalid equation: ${e}`);
+  if (eqns.length === 0) throw new Error("No valid differential equations were found.");
 
-    // normalize variable names
-    const lhs = lhsRaw.replace(/[𝑥]/g, "x").replace(/[𝑦]/g, "y").replace(/[𝑡]/g, "t");
-    const rhs = rhsRaw.replace(/[𝑥]/g, "x").replace(/[𝑦]/g, "y").replace(/[𝑡]/g, "t");
+  type CompiledEquation = { variable: string; fn: EvalFunction };
+  const compiled: CompiledEquation[] = [];
 
-    // Identify derivative term on either side
-    const derivativeRegex = /d([A-Za-z_]\w*)\/d[tT]/;
+  eqns.forEach(eq => {
+    const [lhs, rhs] = eq.split("=").map(s => s.trim());
+    if (!lhs || !rhs) throw new Error(`Invalid equation: ${eq}`);
 
-    let derivativeVar: string | undefined;
-    let exprStr: string;
+    const vectorMatch = lhs.match(/^d\(\(\s*(.+)\s*\)\)\/dt$/)
+      || rhs.match(/^d\(\(\s*(.+)\s*\)\)\/dt$/);
+    if (vectorMatch) {
+      const vars = vectorMatch[1].split(",").map(s => s.trim()); // ["x","y","z"]
 
-    const lhsMatch = lhs.match(derivativeRegex);
-    const rhsMatch = rhs.match(derivativeRegex);
-
-    if (lhsMatch) {
-      derivativeVar = lhsMatch[1];
-      // move all other terms to RHS
-      exprStr = `${rhs} - (${lhs.replace(lhsMatch[0], "0")})`;
-    } else if (rhsMatch) {
-      derivativeVar = rhsMatch[1];
-      exprStr = `${lhs} - (${rhs.replace(rhsMatch[0], "0")})`;
-    } else {
-      // no derivative, just a general expression
-      exprStr = `${lhs} - (${rhs})`;
-    }
-
-    const fn = math.compile(exprStr);
-
-    compiled.push({ derivativeVar, fn, raw: e });
-  }
-
-  const variables = compiled
-    .filter(c => c.derivativeVar)
-    .map(c => c.derivativeVar!) // non-null
-    .filter((v, i, arr) => arr.indexOf(v) === i); // unique
-
-  console.log('variables: ' + JSON.stringify(variables));
-
-  return {
-    variables,
-    equations: compiled,
-    fn: (state: Record<string, number>, t: number) => {
-      const scope = { ...state, t };
-      const result: Record<string, number> = {};
-
-      for (const eq of compiled) {
-        const val = eq.fn.evaluate(scope);
-        if (eq.derivativeVar) {
-          result[`d${eq.derivativeVar}/dt`] = val;
-        } else {
-          // general expression; store under raw string for reference
-          result[eq.raw] = val;
-        }
+      let expressions: string[];
+      if (lhs.includes("d((")) {
+        // LHS is derivative, RHS is expressions
+        const rhsMatch = rhs.match(/^\(\(\s*(.+)\s*\)\)$/);
+        if (!rhsMatch) throw new Error("RHS must be a vector");
+        expressions = rhsMatch[1].split(",").map(s => s.trim());
+      } else {
+        // RHS is derivative, LHS is expressions
+        const lhsMatch = lhs.match(/^\(\(\s*(.+)\s*\)\)$/);
+        if (!lhsMatch) throw new Error("LHS must be a vector");
+        expressions = lhsMatch[1].split(",").map(s => s.trim());
       }
 
-      return result;
+      // Compile each variable's derivative
+      vars.forEach((v, i) => compiled.push({ variable: v, fn: math.compile(expressions[i]) }));
     }
+    else {
+      // Extract variable name from LHS like dy/dt
+      const match = lhs.match(/^d([A-Za-z_]\w*)\/dt$/);
+      if (!match) throw new Error(`Invalid derivative LHS: ${lhs}`);
+      const variable = match[1];
+
+      // Compile RHS expression
+      const fn = math.compile(rhs);
+      compiled.push({ variable, fn });
+    }
+  });
+
+  // Build derivatives map
+  const derivatives: Record<string, (state: State, t: number) => number> = {};
+  const initialState: State = {};
+
+  compiled.forEach(({ variable, fn }) => {
+    derivatives[variable] = (state: State, t: number) => {
+      const scope = { ...state, t };
+      return fn.evaluate(scope);
+    };
+    initialState[variable] = 0; // default initial state
+  });
+
+  return {
+    variables: compiled.map(c => c.variable),
+    indepVar: "t",
+    derivatives,
+    initialState
   };
 }
