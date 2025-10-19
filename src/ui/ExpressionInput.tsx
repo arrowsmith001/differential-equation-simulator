@@ -14,7 +14,7 @@ export function ExpressionInput() {
     setExpr(text);
     try {
       setSys(parseSystem(text));
-      console.log('parsed system: ' + JSON.stringify(sys));
+      console.debug('parsed system: ' + JSON.stringify(sys));
     } catch (err) {
       console.error("Parse error:", err);
     }
@@ -23,7 +23,7 @@ export function ExpressionInput() {
   const step = () => {
     const next = eulerStep(sys, state, 0, 0.01);
     setState(next);
-    console.log("New state:", next);
+    console.debug("New state:", next);
   };
 
   return (

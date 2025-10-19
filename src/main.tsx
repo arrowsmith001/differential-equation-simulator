@@ -3,12 +3,9 @@ import 'mathlive';
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { eulerStep } from "./core/integrator";
 import type { MathfieldElement } from "mathlive";
-
-
-
 import { create, all, type MathNode } from "mathjs";
-import { parseSystem } from "./core/parser";
-import type { State } from "./core/types";
+import { System } from "./core/parser";
+
 const math = create(all);
 
 function initThree(container: HTMLElement) {
@@ -32,7 +29,7 @@ function initThree(container: HTMLElement) {
   scene.add(new THREE.AxesHelper(5));
 
   const points: THREE.Vector3[] = [];
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  var geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
   const line = new THREE.Line(geometry, material);
   scene.add(line);
@@ -44,18 +41,21 @@ function initThree(container: HTMLElement) {
   }
   animate();
 
-
   return {
     addPoint: (x: number, y: number, z: number) => {
-      // Add to trajectory line
-      points.push(new THREE.Vector3(x, y, z));
-      geometry.setFromPoints(points);
+      // Add to trajectory array
+      points.push(new THREE.Vector3(x, z, y));
+
+      // Dispose old geometry and create a new one
+      geometry.dispose(); // free old GPU buffers
+      geometry = new THREE.BufferGeometry().setFromPoints(points);
+      line.geometry = geometry; // update the line's geometry reference
 
       // Add a small sphere at the new point
       const sphereGeo = new THREE.SphereGeometry(0.05, 8, 8); // radius 0.05
       const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
       const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-      sphere.position.set(x, y, z);
+      sphere.position.set(x, z, y);
       scene.add(sphere);
     },
   };
@@ -70,7 +70,12 @@ function normalizeInput(expr: string): string {
     .replace(/\(\s*d\s*([A-Za-z_]\w*)\s*\)\s*\/\s*\(\s*d\s*([A-Za-z_]\w*)\s*\)/g, 'd$1/d$2')
     // remove any spaces and weird minus signs
     .replace(/[−–—]/g, "-")
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, "")
+    .replace(/(\)\s*\/\s*\(\d+\))([A-Za-z])/g, "$1*$2") // adds explicit multiplicatioin sign after fractions e.g. ")/(2)x" -> ")/(2)*x"
+    // .replace(/(\d|\w|\))(\()/g, '$1*(')  // e.g. "2(x+1)" -> "2*(x+1)"
+    // .replace(/(\d|\w|\))([A-Za-z])/g, '$1*$2') // e.g. "2x" or ")x" -> "2*x" or ")*x"
+    // .replace(/([A-Za-z])(\d)/g, '$1*$2')
+    ; // e.g. "x2" -> "x*2";
 }
 
 /** Equation representation */
@@ -219,7 +224,7 @@ export function buildUpdaters(eqs: Eq[], options?: { integrator?: "euler" | "rk4
 }
 
 
-window.addEventListener("DOMContentLoaded", async () =>   {
+window.addEventListener("DOMContentLoaded", async () => {
   await customElements.whenDefined("math-field");
 
   const fields: MathfieldElement[] = [
@@ -231,22 +236,19 @@ window.addEventListener("DOMContentLoaded", async () =>   {
   const plot = initThree(plotContainer);
 
   let currentSystem: any;
-  let state: Record<string, number> = {x:0, y: 1, z:0.5};
+  let state: Record<string, number> = { x: 0, y: 1, z: 0.5 };
   let t = 0;
 
   function updateSystem() {
     const expr = fields
-      .map((f) => normalizeInput(f.getValue("ascii-math")))
-      .filter(Boolean)
-      .join("; ");
+      .map((f) => normalizeInput(f.getValue('ascii-math')))
+      .filter(Boolean);
 
-    console.log("Normalized expressions:", expr);
+    console.debug("Normalized expressions:", expr);
 
     try {
-      currentSystem = parseSystem(expr);
-      console.log('Parsed system:', currentSystem);
-      // state = { ...currentSystem.initialState };
-      console.log("Parsed system:", currentSystem);
+      currentSystem = new System(expr, state);
+      console.debug('Parsed system:', currentSystem);
     } catch (err) {
       console.error("Parse error:", err);
     }
@@ -261,18 +263,23 @@ window.addEventListener("DOMContentLoaded", async () =>   {
 
   const stepBtn = document.getElementById("stepBtn")!;
   stepBtn.addEventListener("click", () => {
-    console.log("Stepping...");
+    console.debug("Stepping...");
     if (!currentSystem) return;
-    const dt = 0.025;
-    state = eulerStep(currentSystem, state, t, dt);
-    t += dt;
 
-    const x = state.x ?? 0;
-    const y = state.y ?? 0;
-    const z = state.z ?? 0;
+    const dt = 0.01;
 
-    plot.addPoint(x, y, z);
+    for (let i = 0; i < 100; i++) {
+      state = eulerStep(currentSystem, t, dt);
+      t += dt;
+      currentSystem.setState(state, t);
 
-    console.log(`t=${t.toFixed(2)} state:`, state);
+      const x = state.x ?? 0;
+      const y = state.y ?? 0;
+      const z = state.z ?? 0;
+
+      plot.addPoint(x, y, z);
+    }
+
+    console.debug(`t=${t.toFixed(2)} state:`, state);
   });
 });
