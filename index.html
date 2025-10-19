@@ -6,33 +6,108 @@
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>differential-engine</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #f9f9f9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
 
+    #app {
+      display: none;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      justify-content: space-between;
+      padding: 20px;
+      box-sizing: border-box;
+      gap: 40px;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 12px;
+      min-width: 280px;
+    }
+
+    math-field {
+      width: 100%;
+      font-size: 1.1rem;
+      padding: 6px 8px;
+      background: white;
+      border-radius: 6px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+      background-color: #0078d7;
+      color: white;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    #plot-outer {
+      flex: 1;
+      border-radius: 12px;
+      /* border: 1px solid #ccc; */
+      /* background: white; */
+      overflow: hidden;
+      display: flex;
+      aspect-ratio: 16/9;
+      max-height: calc(100vh - 40px);
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* optional: inner padding effect without affecting layout */
+    #plot {
+      border-radius: 12px;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      /* x: -10px;
+      y: -10px; */
+      box-sizing: border-box;
+      max-height: calc(100vh - 40px);
+      align-self: center;
+      justify-self: center;
+
+    }
+  </style>
 </head>
 
 <body>
-
-  <div id="app"></div>
-  <div style="flex-direction: row; display: flex;">
-
-    <div style="flex-direction: column; display: flex;">
-
-      <math-field id="eq1" style="margin: 4px;">
-        \frac{dy}{dt}=-x
-      </math-field>
-      <math-field id="eq2" style="margin: 4px;">
-        \frac{dx}{dt}=y
-      </math-field>
-
+  <div class="main">
+    <div class="controls">
+      <math-field id="eq1">\frac{dy}{dt}=-x</math-field>
+      <math-field id="eq2">\frac{dx}{dt}=y</math-field>
+      <math-field id="eq3">\frac{dz}{dt}=0.1</math-field>
       <button id="stepBtn">Step</button>
-
     </div>
-    <div id="plot" style="width:50vw; height:50vh; border:1px solid #ccc;"></div>
 
+    <div id="plot-outer">
+      <div id="plot"></div>
+    </div>
   </div>
 
   <script type="module" src="/src/main.tsx"></script>
-
-
 </body>
 
 </html>

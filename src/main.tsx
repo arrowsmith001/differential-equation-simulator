@@ -9,6 +9,9 @@ import { System } from "./core/parser";
 const math = create(all);
 
 function initThree(container: HTMLElement) {
+
+  // const outerElement = document.getElementById("plot-outer");
+
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
     75,
@@ -34,11 +37,39 @@ function initThree(container: HTMLElement) {
   const line = new THREE.Line(geometry, material);
   scene.add(line);
 
+  // initial canvas size
+  renderer.setSize(container.clientWidth, container.clientHeight);
+
+  // track target size
+  let targetWidth = container.clientWidth;
+  let targetHeight = container.clientHeight;
+  const tol = 1; // px tolerance
+
+  // animation loop
   function animate() {
     requestAnimationFrame(animate);
     controls.update();
+
+    const rect = container.getBoundingClientRect();
+    targetWidth = rect.width;
+    targetHeight = rect.height;
+
+    // interpolate the canvas size toward target for smooth effect
+    const currentWidth = renderer.domElement.width;
+    const currentHeight = renderer.domElement.height;
+
+    const newWidth = currentWidth + (targetWidth - currentWidth) * 0.15;
+    const newHeight = currentHeight + (targetHeight - currentHeight) * 0.15;
+
+    // TODO: there is still a disconnect between the plot and container at the corners
+    renderer.setSize(Math.ceil(newWidth), Math.ceil(newHeight), true);
+
+    camera.aspect = newWidth / newHeight;
+    camera.updateProjectionMatrix();
+
     renderer.render(scene, camera);
   }
+
   animate();
 
   return {
@@ -229,7 +260,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const fields: MathfieldElement[] = [
     document.getElementById("eq1") as MathfieldElement,
-    document.getElementById("eq2") as MathfieldElement
+    document.getElementById("eq2") as MathfieldElement,
+    document.getElementById("eq3") as MathfieldElement,
   ];
 
   const plotContainer = document.getElementById("plot")!;
@@ -268,7 +300,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     const dt = 0.01;
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 1000; i++) {
       state = eulerStep(currentSystem, t, dt);
       t += dt;
       currentSystem.setState(state, t);
