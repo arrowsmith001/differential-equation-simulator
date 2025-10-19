@@ -34,6 +34,8 @@ function normalizeInput(input: string): string[] {
 
 const DERIVATIVE_REGEX = /^d([A-Za-z]\w*)\/d[tT]$/;
 const VECTOR_REGEX = /^(\[\[|\(\()(.+?,.+?)(\]\]|\)\))$/;
+const VECTOR_DERIVATIVE_REGEX = /^\(?d\(\(([^)]+)\)\)\)?\/?\(?dt\)?$/;
+
 
 type Fn = (state: Record<string, number>, t: number, helpers?: Record<string, number>) => number;
 
@@ -67,21 +69,37 @@ export class System {
       return;
     }
 
+    const vectorDerivMatch = lhs.match(VECTOR_DERIVATIVE_REGEX);
     // Vector helper
-    const vectorMatch = rhs.match(VECTOR_REGEX);
-    if (vectorMatch) {
-      const inner = vectorMatch[2];
-      const components = inner.split(/\s*,\s*/).map(s => s.trim());
-      components.forEach((component, i) => {
-        const variable = `${lhs}${i + 1}`;
-        const compiled = math.parse(component);
-        this.helperFnMap[variable] = (state, t, helpers) => {
-          console.debug(`Evaluating vector component ${variable} with expression ${component}`);
-          return compiled.evaluate({ ...state, ...helpers, t });
-        }
+    if (vectorDerivMatch) {
+      const variables = vectorDerivMatch[1]
+        .split(/\s*,\s*/)
+        .map(v => v.trim());
+
+      const rhsMatch = rhs.match(VECTOR_REGEX);
+      if (!rhsMatch) throw new Error(`Vector derivative must equal a vector RHS: ${expr}`);
+
+      const components = rhsMatch[2]
+        .split(/\s*,\s*/)
+        .map(s => s.trim());
+
+      if (components.length !== variables.length)
+        throw new Error(`Mismatched vector length in ${expr}`);
+
+      // Pair each variable with a compiled component
+      variables.forEach((variable, i) => {
+        const sanitized = components[i]; // optional helper
+        const compiled = math.compile(sanitized); // <-- use compile here per component
+        this.variableFnMap[variable] = (_state, t, helpers) => {
+          const scope = { ..._state, ...helpers, t };
+          const val = compiled.evaluate(scope); // safe, scalar
+          return val;
+        };
       });
+
       return;
     }
+
 
     const compiled = math.parse(rhs);
 

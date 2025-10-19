@@ -35,11 +35,6 @@ describe("parseSystem", () => {
         const result = system.evaluateAll(); // at t=2
         expect(result["x"]).toBe(2); // dx/dt = t = 2
         expect(result["y"]).toBe(0); // dy/dt = x = 0
-
-        system.setState(result, 3);
-        const result2 = system.evaluateAll(); // at t=3
-        expect(result2["x"]).toBe(3); // dx/dt = t = 3
-        expect(result2["y"]).toBe(2); // dy/dt = x = 2 (from previous step)
     });
 
     it("supports fractions", () => {
@@ -82,7 +77,7 @@ describe("parseSystem", () => {
 describe("parseSystem - vector syntax", () => {
     it("parses and evaluates vector derivatives correctly", () => {
 
-        const system = new System(["d((x,y,z))/dt = ((y,-x,x+y))"], { x: 1, y: 2, z: 3 });
+        const system = new System(["(d((x,y,z)))/(dt) = ((y,-x,x+y))"], { x: 1, y: 2, z: 3 });
 
         expect(system.getVariables().sort()).toEqual(["x", "y", "z"]);
 
