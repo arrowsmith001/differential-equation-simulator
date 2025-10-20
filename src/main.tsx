@@ -10,7 +10,8 @@ const math = create(all);
 
 function initThree(container: HTMLElement) {
 
-  // const outerElement = document.getElementById("plot-outer");
+  const outerElement = document.getElementById("plot-outer");
+  const innerElement = document.getElementById("plot");
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
@@ -31,11 +32,132 @@ function initThree(container: HTMLElement) {
 
   scene.add(new THREE.AxesHelper(5));
 
-  const points: THREE.Vector3[] = [];
-  var geometry = new THREE.BufferGeometry().setFromPoints(points);
+  // --- persistent objects ---
+  // 1. The trajectory line
+  let points: THREE.Vector3[] = [];
+  let geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
   const line = new THREE.Line(geometry, material);
   scene.add(line);
+
+  // 2. The initial condition marker (movable)
+  const initSphereGeo = new THREE.SphereGeometry(0.1, 16, 16);
+  const initSphereMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+  const initPoint = new THREE.Mesh(initSphereGeo, initSphereMat);
+  scene.add(initPoint);
+
+  // 3. (optional) current integration point
+  const currentSphereGeo = new THREE.SphereGeometry(0.05, 16, 16);
+  const currentSphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+  const currentPoint = new THREE.Mesh(currentSphereGeo, currentSphereMat);
+  scene.add(currentPoint);
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  let isDragging = false;
+  let dragOffset = new THREE.Vector3();
+  const plane = new THREE.Plane();
+  const planeIntersect = new THREE.Vector3();
+
+  // TODO: Minor QOL: visualise locks and projection
+  let lockedAxes = { x: false, y: false, z: false };
+  let dragCallback: ((pos: { x: number, y: number, z: number }) => void) | undefined;
+
+  function getMouseNDC(event: PointerEvent) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    getMouseNDC(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObject(initPoint, false);
+    if (hits.length > 0) {
+      isDragging = true;
+      controls.enabled = false;
+
+      // plane: perpendicular to camera, passing through sphere center
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      plane.setFromNormalAndCoplanarPoint(camDir, initPoint.position);
+
+      // compute offset from intersection point to sphere center
+      if (raycaster.ray.intersectPlane(plane, planeIntersect)) {
+        dragOffset.copy(planeIntersect).sub(initPoint.position);
+      }
+
+      // capture pointer for smoother dragging (optional)
+      (e.target as Element).setPointerCapture?.((e as PointerEvent).pointerId);
+    }
+  }
+
+  let isHoveringInitSphere = false;
+
+  function onPointerMove(e: PointerEvent) {
+    getMouseNDC(e);
+    raycaster.setFromCamera(mouse, camera);
+
+    // Hover detection
+    const intersects = raycaster.intersectObject(initPoint, false);
+    if (intersects.length > 0) {
+      if (!isHoveringInitSphere) {
+        renderer.domElement.style.cursor = "grab";
+        isHoveringInitSphere = true;
+      }
+    } else {
+      if (isHoveringInitSphere) {
+        renderer.domElement.style.cursor = "default";
+        isHoveringInitSphere = false;
+      }
+    }
+
+    // Dragging
+    if (!isDragging) return;
+    if (raycaster.ray.intersectPlane(plane, planeIntersect)) {
+      const newPos = planeIntersect.clone().sub(dragOffset);
+      initPoint.position.set(
+        lockedAxes.x ? 0 : newPos.x,
+        lockedAxes.y ? 0 : newPos.y,
+        lockedAxes.z ? 0 : newPos.z
+      );
+
+      // update state/UI
+      if (dragCallback) dragCallback({
+        x: lockedAxes.x ? 0 : initPoint.position.x,
+        y: lockedAxes.y ? 0 : initPoint.position.y,
+        z: lockedAxes.z ? 0 : initPoint.position.z
+      });
+    }
+  }
+
+  const onPointerUp = () => {
+    if (isDragging) {
+      isDragging = false;
+      controls.enabled = true;
+    }
+
+    const intersects = raycaster.intersectObject(initPoint, false);
+    if (intersects.length > 0) {
+      if (isHoveringInitSphere) {
+        renderer.domElement.style.cursor = "grab";
+        isHoveringInitSphere = true;
+      }
+    } else {
+      if (!isHoveringInitSphere) {
+        renderer.domElement.style.cursor = "default";
+        isHoveringInitSphere = false;
+      }
+    }
+  };
+
+  renderer.domElement.addEventListener("pointerdown", onPointerDown);
+  renderer.domElement.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+
+  // callback storage
+  let onDragCallback: ((pos: { x: number; y: number; z: number }) => void) | null = null;
+
 
   // initial canvas size
   renderer.setSize(container.clientWidth, container.clientHeight);
@@ -58,11 +180,15 @@ function initThree(container: HTMLElement) {
     const currentWidth = renderer.domElement.width;
     const currentHeight = renderer.domElement.height;
 
-    const newWidth = currentWidth + (targetWidth - currentWidth) * 0.15;
-    const newHeight = currentHeight + (targetHeight - currentHeight) * 0.15;
+    const newWidth = Math.ceil(currentWidth + (targetWidth - currentWidth) * 0.15);
+    const newHeight = Math.ceil(currentHeight + (targetHeight - currentHeight) * 0.15);
 
     // TODO: there is still a disconnect between the plot and container at the corners
-    renderer.setSize(Math.ceil(newWidth), Math.ceil(newHeight), true);
+    // outerElement!.style.width = `${newWidth}px`;
+    // outerElement!.style.height = `${newHeight}px`;
+    // innerElement!.style.width = `${newWidth}px`;
+    // innerElement!.style.height = `${newHeight}px`;
+    renderer.setSize(newWidth, newHeight, true);
 
     camera.aspect = newWidth / newHeight;
     camera.updateProjectionMatrix();
@@ -72,22 +198,47 @@ function initThree(container: HTMLElement) {
 
   animate();
 
+
+
   return {
+    initPoint,
+
+    // called when user changes initial conditions
+    setInitialPoint: (x: number, y: number, z: number, axesLocked?: { x?: boolean, y?: boolean, z?: boolean }) => {
+      if (axesLocked) lockedAxes = { ...lockedAxes, ...axesLocked };
+      initPoint.position.set(
+        lockedAxes.x ? 0 : x,
+        lockedAxes.y ? 0 : y,
+        lockedAxes.z ? 0 : z
+      );
+    },
+    onInitialPointDrag: (cb: (pos: { x: number, y: number, z: number }) => void) => {
+      dragCallback = cb;
+    },
+
+    // called during integration to append trajectory
     addPoint: (x: number, y: number, z: number) => {
-      // Add to trajectory array
-      points.push(new THREE.Vector3(x, z, y));
+      points.push(new THREE.Vector3(x, y, z));
+      if (points.length > 2000) points.shift(); // prevent memory bloat
 
-      // Dispose old geometry and create a new one
-      geometry.dispose(); // free old GPU buffers
+      geometry.dispose();
       geometry = new THREE.BufferGeometry().setFromPoints(points);
-      line.geometry = geometry; // update the line's geometry reference
+      line.geometry = geometry;
 
-      // Add a small sphere at the new point
-      const sphereGeo = new THREE.SphereGeometry(0.05, 8, 8); // radius 0.05
-      const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-      sphere.position.set(x, z, y);
-      scene.add(sphere);
+      currentPoint.position.set(x, y, z);
+      currentPoint.visible = true;
+    },
+
+    // reset trajectory when restarting
+    clearPath: () => {
+      points = [];
+      geometry.dispose();
+      geometry = new THREE.BufferGeometry().setFromPoints(points);
+      line.geometry = geometry;
+      // erase current point
+      currentPoint.position.set(0, 0, 0);
+      currentPoint.visible = false;
+
     },
   };
 }
@@ -109,150 +260,9 @@ function normalizeInput(expr: string): string {
     ; // e.g. "x2" -> "x*2";
 }
 
-/** Equation representation */
-type Eq = {
-  raw: string;
-  // dependent variable name (e.g., "y")
-  dep?: string;
-  // independent variable name (e.g., "t", "x") or null for algebraic
-  indep?: string | null;
-  // RHS expression string (already transformed so derivative term removed)
-  expr: string;
-  // compiled mathjs function for expr
-  compiled?: any;
-  // AST node (optional)
-  node?: MathNode;
-};
 
-/** Updater structure */
-export type Updater = {
-  indep: string | null;
-  dependents: string[]; // variables this updater will produce updates for
-  // For indep != null: (state, indepValue, dIndep) => Partial<state>
-  // For indep == null: (state) => Partial<state>
-  updateFn: Function;
-};
+const form = document.getElementById("initial-form")!;
 
-/**
- * Parse user equations into Eq[] where each eq is either:
- *  - derivative: dep and indep set, expr gives RHS (as string)
- *  - algebraic: indep = null, dep set (if LHS is variable) or dep undefined (if it's a pure expression)
- *
- * Supported forms:
- *  - dy/dt = f(x,y,t)
- *  - (d y)/(d t) = f(...)  (normalized)
- *  - y = expression  (algebraic)
- *  - vx = y  (treated as algebraic assignment)
- */
-
-
-
-/**
- * Build updaters from equations.
- *
- * Rules:
- *  - Group derivative equations by their independent variable (e.g. 't', 'x').
- *  - For each group:
- *      - if group size > 1: make a coupled-system updater (vector function) and return updateFn that advances all dependents wrt that independent variable
- *      - if group size == 1: make a scalar updater that updates a single variable when the independent variable steps
- *  - For algebraic equations (indep === null): create assignment updaters that compute the RHS immediately from state.
- *
- * Update function signatures:
- *  - For derivatives group with indep 'I': updateFn(state: Record<string,number>, Ivalue: number, dI: number) => Partial<Record<string,number>>
- *      (Euler step used: nextVar = var + f(state, Ivalue)*dI)
- *  - For algebraic: updateFn(state) => Partial<Record<string,number>>
- */
-export function buildUpdaters(eqs: Eq[], options?: { integrator?: "euler" | "rk4" }): Updater[] {
-  const integrator = options?.integrator ?? "euler";
-
-  // group derivatives by indep
-  const derivGroups: Record<string, Eq[]> = {};
-  const algebraics: Eq[] = [];
-
-  for (const e of eqs) {
-    if (typeof e.indep === "string" && e.dep) {
-      (derivGroups[e.indep] ||= []).push(e);
-    } else {
-      algebraics.push(e);
-    }
-  }
-
-  const updaters: Updater[] = [];
-
-  // Algebraic updaters: immediate assignment functions
-  for (const a of algebraics) {
-    // if a.dep exists -> assignment Var = expr
-    if (a.dep) {
-      const varName = a.dep;
-      const fn = (state: Record<string, number>) => {
-        // evaluate with mathjs
-        const scope = { ...state };
-        let val;
-        try { val = a.compiled.evaluate(scope); } catch { val = NaN; }
-        return { [varName]: val };
-      };
-      updaters.push({ indep: null, dependents: [varName], updateFn: fn });
-    } else {
-      // pure expression (no LHS var). We'll store result under the raw expr key.
-      const key = a.raw;
-      const fn = (state: Record<string, number>) => {
-        const scope = { ...state };
-        let val;
-        try { val = a.compiled.evaluate(scope); } catch { val = NaN; }
-        return { [key]: val };
-      };
-      updaters.push({ indep: null, dependents: [], updateFn: fn });
-    }
-  }
-
-  // Derivative groups
-  for (const indep of Object.keys(derivGroups)) {
-    const group = derivGroups[indep];
-
-    if (group.length === 1) {
-      // single scalar derivative dV/dI = f(...)
-      const e = group[0];
-      const varName = e.dep!;
-      const compiled = e.compiled;
-      const fn = (state: Record<string, number>, Ivalue: number, dI: number) => {
-        const scope = { ...state };
-        // if user wants independent var included in scope (e.g., t or x), include it
-        scope[indep] = Ivalue;
-        let dv;
-        try { dv = compiled.evaluate(scope); } catch { dv = NaN; }
-        const prev = typeof state[varName] === "number" ? state[varName] : 0;
-        const next = isFinite(dv) ? prev + dv * dI : NaN;
-        return { [varName]: next };
-      };
-      updaters.push({ indep, dependents: [varName], updateFn: fn });
-    } else {
-      // coupled system: build vector function f(state, I) -> derivatives array
-      const vars = group.map(g => g.dep!);
-      // compile system-level evaluator that returns an object of dvar/dindep
-      const compiledFns = group.map(g => g.compiled);
-      const fn = (state: Record<string, number>, Ivalue: number, dI: number) => {
-        const scope = { ...state, [indep]: Ivalue };
-        const derivatives: Record<string, number> = {};
-        for (let i = 0; i < vars.length; i++) {
-          try { derivatives[vars[i]] = compiledFns[i].evaluate(scope); } catch { derivatives[vars[i]] = NaN; }
-        }
-
-        // Euler step for the group (vector)
-        const next: Record<string, number> = {};
-        for (const v of vars) {
-          const prev = typeof state[v] === "number" ? state[v] : 0;
-          const dv = derivatives[v];
-          next[v] = isFinite(dv) ? prev + dv * dI : NaN;
-        }
-        return next;
-      };
-
-      updaters.push({ indep, dependents: vars, updateFn: fn });
-    }
-  }
-
-  return updaters;
-}
 
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -265,7 +275,87 @@ window.addEventListener("DOMContentLoaded", async () => {
   ];
 
   const plotContainer = document.getElementById("plot")!;
+
   const plot = initThree(plotContainer);
+
+  plot.onInitialPointDrag(({ x, y, z }) => {
+    plot.clearPath();
+    // update UI fields
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[data-var]');
+    inputs.forEach((input) => {
+      if (input.dataset.var === 'x') input.value = x.toFixed(2);
+      if (input.dataset.var === 'y') input.value = y.toFixed(2);
+      if (input.dataset.var === 'z') input.value = z.toFixed(2);
+    });
+
+    // update simulation state
+    state = { ...state, x, y, z };
+    if (currentSystem) currentSystem.setState(state, t);
+  });
+
+  const form = document.getElementById("initial-form")!;
+
+  /** Build dynamic initial condition inputs based on variable list */
+  function createInitialConditionUI(vars: string[]) {
+    form.innerHTML = "";
+
+    vars.forEach(v => {
+      const wrapper = document.createElement("div");
+      wrapper.style.display = "flex";
+      wrapper.style.alignItems = "center";
+      wrapper.style.gap = "8px";
+
+      const label = document.createElement("label");
+      label.textContent = `${v}₀:`;
+      label.style.width = "20px";
+
+      const input = document.createElement("input");
+      input.type = "number";
+      input.step = "any";
+      input.value = state[v]?.toString() ?? "0";
+      input.dataset.var = v;
+      input.style.width = "80px";
+
+      input.addEventListener("input", (e) => updateInitialConditions(vars));
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(input);
+      form.appendChild(wrapper);
+    });
+
+
+    updateInitialConditions(vars);
+  }
+
+  /** Sync inputs → system state and re-plot initial point */
+  function updateInitialConditions(vars: string[]) {
+    const inputs = form.querySelectorAll("input[data-var]");
+    const newState: Record<string, number> = {};
+
+    inputs.forEach((el) => {
+      const input = el as HTMLInputElement;
+      const variable = input.dataset.var!;
+      newState[variable] = parseFloat(input.value) || 0;
+    });
+
+    state = { ...newState };
+    t = 0;
+    if (currentSystem) currentSystem.setState(state, t);
+
+    // Visualize the starting point (green)
+    const x = state.x ?? 0;
+    const y = state.y ?? 0;
+    const z = state.z ?? 0;
+
+    plot.clearPath();
+
+    plot.setInitialPoint(
+      x,
+      y,
+      z,
+      { x: !vars.includes("x"), y: !vars.includes("y"), z: !vars.includes("z") }
+    );
+  }
 
   let currentSystem: any;
   let state: Record<string, number> = { x: 0, y: 1, z: 0.5 };
@@ -281,6 +371,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       currentSystem = new System(expr, state);
       console.debug('Parsed system:', currentSystem);
+
+      // Build the UI when a new system is successfully parsed
+      const vars = currentSystem.getVariables();
+
+      createInitialConditionUI(vars);
     } catch (err) {
       console.error("Parse error:", err);
     }
@@ -315,3 +410,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     console.debug(`t=${t.toFixed(2)} state:`, state);
   });
 });
+
+
+

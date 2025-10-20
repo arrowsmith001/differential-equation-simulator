@@ -36,7 +36,8 @@
       flex-direction: column;
       justify-content: flex-start;
       gap: 12px;
-      min-width: 280px;
+      min-width: 300px;
+      max-width: 50%;
     }
 
     math-field {
@@ -57,6 +58,7 @@
       color: white;
       cursor: pointer;
       transition: background 0.2s;
+      width: 100%;
     }
 
     button:hover {
@@ -72,6 +74,8 @@
       display: flex;
       aspect-ratio: 16/9;
       max-height: calc(100vh - 40px);
+      width: 100%;
+      height: 100%;
       align-items: center;
       justify-content: center;
     }
@@ -100,6 +104,12 @@
       <math-field id="eq2">\frac{dx}{dt}=y</math-field>
       <math-field id="eq3">\frac{dz}{dt}=0.1</math-field>
       <button id="stepBtn">Step</button>
+
+      <div id="initial-conditions" style="margin-top: 1em;">
+  <h3>Initial Conditions</h3>
+  <form id="initial-form" style="display: flex; flex-direction: column; gap: 6px;"></form>
+</div>
+
     </div>
 
     <div id="plot-outer">
