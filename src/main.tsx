@@ -390,42 +390,58 @@ window.addEventListener("DOMContentLoaded", async () => {
   updateSystem(); // initial parse
 
   let isPlaying = false;
-    let lastFrameTime = performance.now();
-    const dt = 0.01; // simulation timestep
 
-    // Play/pause button
-    const playBtn = document.getElementById("playBtn")!;
-    playBtn.addEventListener("click", () => {
-      isPlaying = !isPlaying;
-      playBtn.textContent = isPlaying ? "Pause" : "Play";
-      lastFrameTime = performance.now(); // reset timer to avoid big dt jump
-    });
 
-    // Main animation loop
-    function simulateFrame(time: number) {
-      requestAnimationFrame(simulateFrame);
-      if (!isPlaying || !currentSystem) return;
+  let lastFrameTime = performance.now();
+  const dt = 0.01; // simulation timestep
 
-      const elapsed = (time - lastFrameTime) / 1000; // seconds
-      lastFrameTime = time;
+  // Play/pause button
+  const playBtn = document.getElementById("playBtn")!;
 
-      let remaining = elapsed;
-      while (remaining > 0) {
-        const step = Math.min(dt, remaining);
-        state = eulerStep(currentSystem, t, step);
-        t += step;
-        currentSystem.setState(state, t);
+  function togglePlay() {
+    isPlaying = !isPlaying;
+    playBtn.textContent = isPlaying ? "Pause" : "Play";
+    lastFrameTime = performance.now(); // reset timer to avoid big dt jump
+  }
+  
+  playBtn.addEventListener("click", () => {
+    togglePlay();
+  });
+  window.addEventListener("keydown", (e) => {
+    // check that focus isn’t in an input or mathfield
+    if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "MATH-FIELD") return;
 
-        const x = state.x ?? 0;
-        const y = state.y ?? 0;
-        const z = state.z ?? 0;
-        plot.addPoint(x, y, z);
-
-        remaining -= step;
-      }
+    if (e.code === "Space") {
+      e.preventDefault(); // prevent page scroll
+      togglePlay();
     }
+  });
 
+  // Main animation loop
+  function simulateFrame(time: number) {
     requestAnimationFrame(simulateFrame);
+    if (!isPlaying || !currentSystem) return;
+
+    const elapsed = (time - lastFrameTime) / 1000; // seconds
+    lastFrameTime = time;
+
+    let remaining = elapsed;
+    while (remaining > 0) {
+      const step = Math.min(dt, remaining);
+      state = eulerStep(currentSystem, t, step);
+      t += step;
+      currentSystem.setState(state, t);
+
+      const x = state.x ?? 0;
+      const y = state.y ?? 0;
+      const z = state.z ?? 0;
+      plot.addPoint(x, y, z);
+
+      remaining -= step;
+    }
+  }
+
+  requestAnimationFrame(simulateFrame);
 
 });
 
