@@ -60,6 +60,7 @@ function initThree(container: HTMLElement) {
   const planeIntersect = new THREE.Vector3();
 
   // TODO: Minor QOL: visualise locks and projection
+  // TODO: Bug: If system of eqs changes, then the initial point jumps to the current
   let lockedAxes = { x: false, y: false, z: false };
   let dragCallback: ((pos: { x: number, y: number, z: number }) => void) | undefined;
 
@@ -388,27 +389,44 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   updateSystem(); // initial parse
 
-  const stepBtn = document.getElementById("stepBtn")!;
-  stepBtn.addEventListener("click", () => {
-    console.debug("Stepping...");
-    if (!currentSystem) return;
+  let isPlaying = false;
+    let lastFrameTime = performance.now();
+    const dt = 0.01; // simulation timestep
 
-    const dt = 0.01;
+    // Play/pause button
+    const playBtn = document.getElementById("playBtn")!;
+    playBtn.addEventListener("click", () => {
+      isPlaying = !isPlaying;
+      playBtn.textContent = isPlaying ? "Pause" : "Play";
+      lastFrameTime = performance.now(); // reset timer to avoid big dt jump
+    });
 
-    for (let i = 0; i < 1000; i++) {
-      state = eulerStep(currentSystem, t, dt);
-      t += dt;
-      currentSystem.setState(state, t);
+    // Main animation loop
+    function simulateFrame(time: number) {
+      requestAnimationFrame(simulateFrame);
+      if (!isPlaying || !currentSystem) return;
 
-      const x = state.x ?? 0;
-      const y = state.y ?? 0;
-      const z = state.z ?? 0;
+      const elapsed = (time - lastFrameTime) / 1000; // seconds
+      lastFrameTime = time;
 
-      plot.addPoint(x, y, z);
+      let remaining = elapsed;
+      while (remaining > 0) {
+        const step = Math.min(dt, remaining);
+        state = eulerStep(currentSystem, t, step);
+        t += step;
+        currentSystem.setState(state, t);
+
+        const x = state.x ?? 0;
+        const y = state.y ?? 0;
+        const z = state.z ?? 0;
+        plot.addPoint(x, y, z);
+
+        remaining -= step;
+      }
     }
 
-    console.debug(`t=${t.toFixed(2)} state:`, state);
-  });
+    requestAnimationFrame(simulateFrame);
+
 });
 
 
