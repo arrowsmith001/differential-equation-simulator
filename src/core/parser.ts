@@ -14,6 +14,13 @@ export interface DifferentialSystem {
 
 const DERIVATIVE_REGEX = /^\(?d([A-Za-z]\w*)\)?\/\(?d[tT]\)?$/;
 const VECTOR_REGEX = /(\[\[|\(\()(.+?,.+?)(\]\]|\)\))/g;
+const KNOWN_FUNCTIONS = [
+  'sin', 'cos', 'tan', 'exp', 'log', 'sqrt', 'abs',
+  'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'pow', 'min', 'max'
+];
+
+// Match any identifier that isn't a known function, followed by '('
+const fnPattern = KNOWN_FUNCTIONS.join('|');
 
 type Fn = (state: Record<string, number>, t: number, helpers?: Record<string, number>) => number;
 
@@ -113,6 +120,23 @@ export class System {
     return scalarExprs;
   }
 
+
+  private preprocessExpression(expr: string): string {
+
+    // 1️⃣ Add * between two variable-like tokens separated by whitespace
+    // e.g. "x y" -> "x*y", "beta z" -> "beta*z"
+    expr = expr.replace(/([A-Za-z_]+)\s+([A-Za-z_]+)/g, '$1*$2');
+
+    // 2️⃣ Add * before parentheses if it's not a known function
+    // e.g. "sigma(y-x)" -> "sigma*(y-x)", but "sin(x)" -> "sin(x)"
+    expr = expr.replace(
+      new RegExp(`(?<!\\b(?:${fnPattern})\\b)\\s*([A-Za-z_]+)\\s*\\(`, 'g'),
+      '$1*('
+    );
+
+    return expr;
+  }
+
   private parseExpression(expr: string) {
     let [lhs, rhs] = expr.split("=").map(s => s.trim());
     if (!lhs || !rhs) return;
@@ -124,14 +148,19 @@ export class System {
     if (derivativeMatch) {
       const variable = derivativeMatch[1];
       console.debug(`Compiling derivative for variable "${variable}":`, rhs);
-      const compiled = math.parse(rhs);
+      const cleaned = this.preprocessExpression(rhs);
+      console.debug('cleaned: ' + cleaned);
+      const compiled = math.parse(cleaned);
       this.variableFnMap[variable] = (_state, t, helpers) =>
         compiled.evaluate({ ..._state, ...helpers, t });
       return;
     }
 
     // Compile scalar helper
-    const compiled = math.parse(rhs);
+    const cleaned = this.preprocessExpression(rhs);
+    console.debug("Before: " + rhs);
+    console.debug('cleaned: ' + cleaned);
+    const compiled = math.parse(cleaned);
     this.helperFnMap[lhs] = (state, t, helpers) => {
       return compiled.evaluate({ ...state, ...helpers, t }); // ALWAYS returns a number
     };

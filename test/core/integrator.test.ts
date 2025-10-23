@@ -22,7 +22,7 @@ describe("integrator", () => {
 
     it("integrates a Lorenz system with implicit multiplication", () => {
         const system = new System([
-            "dx/dt=sigma(y-x)", "dy/dt=x(rho-z)-y", "dz/dt=xy-betaz", "rho=28", "sigma=10", "beta=(8)/(3)"
+            "dx/dt=sigma(y-x)", "dy/dt=x(rho-z)-y", "dz/dt=x y-beta z", "rho=28", "sigma=10", "beta=(8)/(3)"
         ], { x: 1, y: 1, z: 1 });
         expect(system).toBeDefined();
 

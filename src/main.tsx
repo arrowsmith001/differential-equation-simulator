@@ -370,12 +370,13 @@ function initThree(container: HTMLElement) {
  * Small sanitizer for MathLive output and Unicode:
  */
 function normalizeInput(expr: string): string {
+  console.debug('Raw input: ' + expr); 
   return expr
     // Convert things like (d y)/(d t) or ( d y )/( d t ) → dy/dt
     .replace(/\(\s*d\s*([A-Za-z_]\w*)\s*\)\s*\/\s*\(\s*d\s*([A-Za-z_]\w*)\s*\)/g, 'd$1/d$2')
     // remove any spaces and weird minus signs
-    .replace(/[−–—]/g, "-")
-    .replace(/\s+/g, "")
+    // .replace(/[−–—]/g, "-")
+    // .replace(/\s+/g, "")
     .replace(/(\)\s*\/\s*\(\d+\))([A-Za-z])/g, "$1*$2") // adds explicit multiplicatioin sign after fractions e.g. ")/(2)x" -> ")/(2)*x"
     // .replace(/(\d|\w|\))(\()/g, '$1*(')  // e.g. "2(x+1)" -> "2*(x+1)"
     // .replace(/(\d|\w|\))([A-Za-z])/g, '$1*$2') // e.g. "2x" or ")x" -> "2*x" or ")*x"
