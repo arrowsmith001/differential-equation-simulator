@@ -10,9 +10,6 @@ const math = create(all);
 
 function initThree(container: HTMLElement) {
 
-  const outerElement = document.getElementById("plot-outer");
-  const innerElement = document.getElementById("plot");
-
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
     75,
@@ -59,8 +56,6 @@ function initThree(container: HTMLElement) {
   const plane = new THREE.Plane();
   const planeIntersect = new THREE.Vector3();
 
-  // TODO: Minor QOL: visualise locks and projection
-  // TODO: Bug: If system of eqs changes, then the initial point jumps to the current
   let lockedAxes = { x: false, y: false, z: false };
   let dragCallback: ((pos: { x: number, y: number, z: number }) => void) | undefined;
 
