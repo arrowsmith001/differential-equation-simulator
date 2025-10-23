@@ -1,4 +1,4 @@
-import { DifferentialSystem, State, System } from "@/core/parser";
+import { System } from "@/core/parser";
 import { describe, it, expect } from "vitest";
 
 describe("parseSystem", () => {

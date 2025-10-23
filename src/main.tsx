@@ -3,8 +3,9 @@ import 'mathlive';
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { eulerStep } from "./core/integrator";
 import type { MathfieldElement } from "mathlive";
-import { create, all, type MathNode } from "mathjs";
+import { create, all, type MathNode, factorial } from "mathjs";
 import { System } from "./core/parser";
+import { applyAxesColors, getDefaultAxesColors } from "./ui/axesColors";
 
 const math = create(all);
 
@@ -27,7 +28,14 @@ function initThree(container: HTMLElement) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
 
-  scene.add(new THREE.AxesHelper(5));
+  const gridHelper = new THREE.GridHelper(20, 20);
+  gridHelper.material.opacity = 0.0;
+  gridHelper.material.transparent = true;
+  gridHelper.visible = false;
+  scene.add(gridHelper);
+
+  const axis = new THREE.AxesHelper(10);
+  scene.add(axis);
 
   // --- persistent objects ---
   // 1. The trajectory line
@@ -36,6 +44,20 @@ function initThree(container: HTMLElement) {
   const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
   const line = new THREE.Line(geometry, material);
   scene.add(line);
+
+  const guideLineGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-20, 0, 0),
+    new THREE.Vector3(20, 0, 0)
+  ]);
+  const guideLinematerial = new THREE.LineDashedMaterial({
+    color: 0xffffff,
+    dashSize: 0.2,
+    gapSize: 1,
+    transparent: true
+  });
+  const guideLine = new THREE.Line(guideLineGeometry, guideLinematerial);
+  guideLine.visible = false;
+  scene.add(guideLine);
 
   // 2. The initial condition marker (movable)
   const initSphereGeo = new THREE.SphereGeometry(0.1, 16, 16);
@@ -52,6 +74,7 @@ function initThree(container: HTMLElement) {
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
   let isDragging = false;
+  let dragStarted = false;
   let dragOffset = new THREE.Vector3();
   const plane = new THREE.Plane();
   const planeIntersect = new THREE.Vector3();
@@ -86,6 +109,12 @@ function initThree(container: HTMLElement) {
       // capture pointer for smoother dragging (optional)
       (e.target as Element).setPointerCapture?.((e as PointerEvent).pointerId);
     }
+
+    if (isDragging) {
+      dragStarted = true;
+      fadeGrid(gridHelper, 0.5);
+      fadeLine(guideLine.material, 0.5);
+    }
   }
 
   let isHoveringInitSphere = false;
@@ -110,6 +139,57 @@ function initThree(container: HTMLElement) {
 
     // Dragging
     if (!isDragging) return;
+
+
+    const lockedToXy = !lockedAxes.x && !lockedAxes.y && lockedAxes.z;
+    const lockedToYz = lockedAxes.x && !lockedAxes.y && !lockedAxes.z;
+    const lockedToXz = !lockedAxes.x && lockedAxes.y && !lockedAxes.z;
+
+    // locked to single lines
+    const lockedToX = !lockedAxes.x && lockedAxes.y && lockedAxes.z;
+    const lockedToY = lockedAxes.x && !lockedAxes.y && lockedAxes.z;
+    const lockedToZ = lockedAxes.x && lockedAxes.y && !lockedAxes.z;
+
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    plane.setFromNormalAndCoplanarPoint(camDir, initPoint.position);
+
+    const lineLocked = lockedToX || lockedToY || lockedToZ;
+    const planeLocked = lockedToXy || lockedToXz || lockedToYz;
+
+    if (!dragStarted) {
+      dragStarted = true;
+      if(planeLocked) fadeGrid(gridHelper, 0.5);
+      if(lineLocked) fadeLine(guideLine.material, 0.5);
+    }
+
+    // use locked information and project plane accordingly
+    gridHelper.visible = false;
+    guideLine.visible = false;
+    if (lockedToXy) {
+      plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1), initPoint.position);
+      gridHelper.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      gridHelper.visible = true;
+    } else if (lockedToYz) {
+      plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(1, 0, 0), initPoint.position);
+      gridHelper.setRotationFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+      gridHelper.visible = true;
+    } else if (lockedToXz) {
+      plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), initPoint.position);
+      gridHelper.setRotationFromAxisAngle(new THREE.Vector3(0, 0, 0), Math.PI / 2);
+      gridHelper.visible = true;
+    } else if (lockedToX) {
+      guideLine.setRotationFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      guideLine.visible = true;
+    } else if (lockedToY) {
+      guideLine.setRotationFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+      guideLine.visible = true;
+    } else if (lockedToZ) {
+      guideLine.setRotationFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+      guideLine.visible = true;
+    }
+
+
     if (raycaster.ray.intersectPlane(plane, planeIntersect)) {
       const newPos = planeIntersect.clone().sub(dragOffset);
       initPoint.position.set(
@@ -130,6 +210,7 @@ function initThree(container: HTMLElement) {
   const onPointerUp = () => {
     if (isDragging) {
       isDragging = false;
+      dragStarted = false;
       controls.enabled = true;
     }
 
@@ -145,11 +226,15 @@ function initThree(container: HTMLElement) {
         isHoveringInitSphere = false;
       }
     }
+
+    fadeGrid(gridHelper, 0);
+    fadeLine(guideLine.material, 0);
   };
 
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
   renderer.domElement.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp);
+
 
   // callback storage
   let onDragCallback: ((pos: { x: number; y: number; z: number }) => void) | null = null;
@@ -194,7 +279,42 @@ function initThree(container: HTMLElement) {
 
   animate();
 
+  function fadeGrid(grid: THREE.GridHelper, targetOpacity: number, duration = 300) {
+    const startOpacity = grid.material.opacity;
+    const startTime = performance.now();
 
+    function animate() {
+      const now = performance.now();
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1); // 0 → 1
+
+      // Linear interpolation
+      grid.material.opacity = startOpacity + (targetOpacity - startOpacity) * t;
+
+      if (t < 1) {
+        requestAnimationFrame(animate);
+      }
+
+    }
+
+    animate();
+  }
+
+  function fadeLine(line: THREE.LineDashedMaterial | THREE.LineBasicMaterial, targetOpacity: number, duration = 500) {
+
+    const startOpacity = line.opacity;
+    const startTime = performance.now();
+
+    function animate() {
+      const elapsed = performance.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      line.opacity = startOpacity + (targetOpacity - startOpacity) * t;
+
+      if (t < 1) requestAnimationFrame(animate);
+    }
+
+    animate();
+  }
 
   return {
     initPoint,
@@ -207,6 +327,13 @@ function initThree(container: HTMLElement) {
         lockedAxes.y ? 0 : y,
         lockedAxes.z ? 0 : z
       );
+
+      const axisColors = getDefaultAxesColors();
+      const ignored = [];
+      if (lockedAxes.x) ignored.push(0);
+      if (lockedAxes.y) ignored.push(1);
+      if (lockedAxes.z) ignored.push(2);
+      applyAxesColors(axis, axisColors, ignored);
     },
     onInitialPointDrag: (cb: (pos: { x: number, y: number, z: number }) => void) => {
       dragCallback = cb;
@@ -268,6 +395,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("eq1") as MathfieldElement,
     document.getElementById("eq2") as MathfieldElement,
     document.getElementById("eq3") as MathfieldElement,
+    document.getElementById("eq4") as MathfieldElement,
+    document.getElementById("eq5") as MathfieldElement,
+    document.getElementById("eq6") as MathfieldElement,
   ];
 
   const plotContainer = document.getElementById("plot")!;
@@ -398,7 +528,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     playBtn.textContent = isPlaying ? "Pause" : "Play";
     lastFrameTime = performance.now(); // reset timer to avoid big dt jump
   }
-  
+
   playBtn.addEventListener("click", () => {
     togglePlay();
   });

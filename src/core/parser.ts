@@ -1,16 +1,8 @@
 
-import { create, all, MathNode, EvalFunction, e } from "mathjs";
+import { create, all } from "mathjs";
 
 const math = create(all);
 
-type CompiledEquation = {
-  variable: string;
-  fn: any;
-};
-
-const compiled: CompiledEquation[] = [];
-
-// ---------------------- Types ----------------------
 export type State = Record<string, number>;
 
 export interface DifferentialSystem {
@@ -18,18 +10,6 @@ export interface DifferentialSystem {
   indepVar: string;
   derivatives: Record<string, (state: State, t: number) => number>;
   initialState: State;
-}
-
-
-// ---------------------- Helper: normalize derivatives ----------------------
-function normalizeInput(input: string): string[] {
-  return input
-    .split(";")
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(s => s.replace(/\(\s*d\s*([A-Za-z_]\w*)\s*\)\s*\/\s*\(\s*d\s*t\s*\)/g, "d$1/dt")) // (d y)/(d t) -> dy/dt
-    .map(s => s.replace(/[−–—]/g, "-")) // replace unicode minus
-    .map(s => s.replace(/\s+/g, "")); // remove whitespace
 }
 
 const DERIVATIVE_REGEX = /^\(?d([A-Za-z]\w*)\)?\/\(?d[tT]\)?$/;
@@ -59,6 +39,7 @@ export class System {
     for (const expr of expandedExprs) this.parseExpression(expr);
 
     this.t = t;
+
     console.debug("Parsed system:");
     console.debug("Variables:", this.getVariables());
     console.debug("Helpers:", this.getHelpers());
@@ -112,11 +93,10 @@ export class System {
       const components = componentsList[0].map(c => c.replace(/\s/g, ''));
       this.vectorAliases[alias] = components;
 
-      return []; // alias handled, no further equations needed
+      return [];
     }
 
     // Otherwise decompose into N scalar equations with unique component names
-    console.debug("componentsList:", componentsList);
     const scalarExprs: string[] = [];
     for (let i = 0; i < dimension; i++) {
       let newExpr = expr;
@@ -143,8 +123,8 @@ export class System {
     const derivativeMatch = lhs.match(DERIVATIVE_REGEX);
     if (derivativeMatch) {
       const variable = derivativeMatch[1];
-      const compiled = math.parse(rhs);
       console.debug(`Compiling derivative for variable "${variable}":`, rhs);
+      const compiled = math.parse(rhs);
       this.variableFnMap[variable] = (_state, t, helpers) =>
         compiled.evaluate({ ..._state, ...helpers, t });
       return;
@@ -158,13 +138,14 @@ export class System {
     this.helperDependencies[lhs] = this.extractDependencies(rhs);
   }
 
-  evaluateAll(): Record<string, number> {
+  public evaluateAll(): Record<string, number> {
     const helpersEvaluated = this.evaluateHelpers();
     const result: Record<string, number> = {};
     for (const [variable, fn] of Object.entries(this.variableFnMap))
       result[variable] = fn(this.state, this.t, helpersEvaluated);
     return { ...helpersEvaluated, ...result };
   }
+
   private extractDependencies(expr: string): Set<string> {
     const deps = new Set<string>();
     const regex = /\b[A-Za-z_]\w*\b/g;
