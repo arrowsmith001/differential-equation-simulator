@@ -510,7 +510,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   fields.forEach((f) => {
     f.addEventListener("input", updateSystem);
-    f.addEventListener("change", updateSystem);
   });
 
   updateSystem(); // initial parse
