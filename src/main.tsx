@@ -363,6 +363,9 @@ function initThree(container: HTMLElement) {
       currentPoint.visible = false;
 
     },
+    isClear: () => {
+      return points.length == 0;
+    }
   };
 }
 
@@ -549,6 +552,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     const elapsed = (time - lastFrameTime) / 1000; // seconds
     lastFrameTime = time;
+
+    if (plot.isClear()) {
+      const x = state.x ?? 0;
+      const y = state.y ?? 0;
+      const z = state.z ?? 0;
+      plot.addPoint(x, y, z);
+    }
 
     let remaining = elapsed;
     while (remaining > 0) {
