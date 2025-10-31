@@ -7,5 +7,6 @@ export default defineConfig({
   build: {
     assetsInlineLimit: 0
   },
-  assetsInclude: ["**/*.woff2", "**/*.woff"]
+  assetsInclude: ["**/*.woff2", "**/*.woff"],
+  base: "https://arrowsmith001.github.io/differential-equation-simulator/"
 })
