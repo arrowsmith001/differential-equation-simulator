@@ -1,56 +1,117 @@
 
 import { create, all } from "mathjs";
-
+import { Expression, System } from "./system";
 const math = create(all);
 
-export type State = Record<string, number>;
-
-export interface DifferentialSystem {
-  variables: string[];
-  indepVar: string;
-  derivatives: Record<string, (state: State, t: number) => number>;
-  initialState: State;
+export function parseSystem(exprs: Expression[]): System {
+  console.debug("Parsing system with expressions:", exprs);
+  return new System(exprs);
 }
 
-const DERIVATIVE_REGEX = /^\(?d([A-Za-z]\w*)\)?\/\(?d[tT]\)?$/;
+export type State = Record<string, number | undefined>;
+
+const DERIVATIVE_REGEX = /^\(?d([A-Za-z]\w*)\)?\/\(?d\s*[tT]\)?$/;
 const VECTOR_REGEX = /(\[\[|\(\()(.+?,.+?)(\]\]|\)\))/g;
 const KNOWN_FUNCTIONS = [
-  'sin', 'cos', 'tan', 'exp', 'log', 'sqrt', 'abs',
+  'sin', 'cos', 'tan', 'exp', 'sqrt', 'abs',
   'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'pow', 'min', 'max'
 ];
 
 // Match any identifier that isn't a known function, followed by '('
 const fnPattern = KNOWN_FUNCTIONS.join('|');
 
-type Fn = (state: Record<string, number>, t: number, helpers?: Record<string, number>) => number;
+type Fn = (state: State, t: number, helpers?: Record<string, number>) => number;
 
-export class System {
-  private variableFnMap: Record<string, Fn> = {}; // canonical variables
-  private helperFnMap: Record<string, Fn> = {};   // aliases / helpers
-  private helperDependencies: Record<string, Set<string>> = {};
-  private vectorAliases: Record<string, string[]> = {}; // r -> ['x','y','z']
-  private state: Record<string, number> = {};
-  private t: number = 0;
+export class SystemDefinition {
 
-  constructor(exprs: string[], initialState?: Record<string, number>, t: number = 0) {
-    if (initialState) this.state = { ...initialState };
+  private compiled : CompiledSystem;
+
+  constructor(expr: Expression[]) {
+    this.compiled = new CompiledSystem(expr);
+  }
+
+  public evaluateAll(state: State, t: number): State {
+    const helpersEvaluated = this.evaluateHelpers(state, t);
+    const result: Record<string, number | undefined> = {};
+    for (const [variable, fn] of Object.entries(this.compiled.variableFnMap))
+      result[variable] = fn(state, t, helpersEvaluated);
+    return { ...helpersEvaluated, ...result };
+  }
+
+  public evaluateVar(name: string, state: State, t: number): number {
+
+    // first check helpers (aliases)
+    if (this.compiled.helperFnMap[name]) return this.compiled.helperFnMap[name](state, t, this.evaluateHelpers(state, t));
+    // then canonical variables
+    if (this.compiled.variableFnMap[name]) return this.compiled.variableFnMap[name](state, t, this.evaluateHelpers(state, t));
+
+    throw new Error(`Unknown variable: ${name}`);
+  }
+
+  private evaluateHelpers(state: State, t: number): Record<string, number> {
+    const evaluated: Record<string, number> = {};
+    const visited = new Set<string>();
+
+    const evalHelper = (name: string) => {
+      if (visited.has(name)) return;
+      visited.add(name);
+
+      const deps = this.compiled.helperDependencies[name] || new Set();
+      for (const dep of deps) if (this.compiled.helperFnMap[dep]) evalHelper(dep);
+
+      const val = this.compiled.helperFnMap[name](state, t, evaluated);
+
+      if (typeof val !== 'number') {
+        throw new Error(`Helper "${name}" evaluated to non-scalar value: ${val}`);
+      }
+
+      evaluated[name] = val;
+    };
+
+    for (const h of this.compiled.helpers) evalHelper(h);
+    return evaluated;
+  }
+
+  public getExpressions(): Expression[] {
+    return this.compiled.expressions;
+  }
+
+  public getVariables(): string[] {
+    return this.compiled.variables;
+  }
+
+}
+
+class CompiledSystem {
+
+  public readonly expressions: Expression[];
+  public readonly variableFnMap: Record<string, Fn> = {}; // canonical variables
+  public readonly helperFnMap: Record<string, Fn> = {};   // aliases / helpers
+  public readonly helperDependencies: Record<string, Set<string>> = {};
+  public readonly vectorAliases: Record<string, string[]> = {}; // r -> ['x','y','z']
+  public readonly variables : string[]; // canonical variables
+  public readonly helpers : string[]; // aliases / helpers
+
+  constructor(exprs: Expression[]) {
+    this.expressions = exprs;
     const expandedExprs: string[] = [];
 
     // Frontload vector expansion
     for (const expr of exprs) {
-      const decomposed = this.expandVectors(expr);
+      const decomposed = this.expandVectors(expr.sanitized);
       expandedExprs.push(...decomposed);
     }
 
     // Parse scalar expressions
     for (const expr of expandedExprs) this.parseExpression(expr);
 
-    this.t = t;
+    this.variables = Object.keys(this.variableFnMap).sort();
+    this.helpers = Object.keys(this.helperFnMap).sort();
 
-    console.debug("Parsed system:");
-    console.debug("Variables:", this.getVariables());
-    console.debug("Helpers:", this.getHelpers());
-    console.debug("Aliases:", this.vectorAliases);
+    // console.debug("Parsed system:");
+    // console.debug("Variables:", this.variables);
+    // console.debug("Helpers:", this.helpers);
+    // console.debug("Aliases:", this.vectorAliases);
   }
 
   /** Expand vectors: handles aliases r=((x,y,z)) or derivatives d((x,y,z))/dt */
@@ -123,11 +184,11 @@ export class System {
 
   private preprocessExpression(expr: string): string {
 
-    // 1️⃣ Add * between two variable-like tokens separated by whitespace
+    // Add * between two variable-like tokens separated by whitespace
     // e.g. "x y" -> "x*y", "beta z" -> "beta*z"
     expr = expr.replace(/([A-Za-z_]+)\s+([A-Za-z_]+)/g, '$1*$2');
 
-    // 2️⃣ Add * before parentheses if it's not a known function
+    // Add * before parentheses if it's not a known function
     // e.g. "sigma(y-x)" -> "sigma*(y-x)", but "sin(x)" -> "sin(x)"
     expr = expr.replace(
       new RegExp(`(?<!\\b(?:${fnPattern})\\b)\\s*([A-Za-z_]+)\\s*\\(`, 'g'),
@@ -147,19 +208,17 @@ export class System {
     const derivativeMatch = lhs.match(DERIVATIVE_REGEX);
     if (derivativeMatch) {
       const variable = derivativeMatch[1];
-      console.debug(`Compiling derivative for variable "${variable}":`, rhs);
       const cleaned = this.preprocessExpression(rhs);
-      console.debug('cleaned: ' + cleaned);
       const compiled = math.parse(cleaned);
-      this.variableFnMap[variable] = (_state, t, helpers) =>
-        compiled.evaluate({ ..._state, ...helpers, t });
+      this.variableFnMap[variable] = (_state, t, helpers) => {
+        // console.debug(JSON.stringify(_state) + ' ' + t + ' ' + JSON.stringify(helpers)); 
+        return compiled.evaluate({ ..._state, ...helpers, t });
+      }
       return;
     }
 
     // Compile scalar helper
     const cleaned = this.preprocessExpression(rhs);
-    console.debug("Before: " + rhs);
-    console.debug('cleaned: ' + cleaned);
     const compiled = math.parse(cleaned);
     this.helperFnMap[lhs] = (state, t, helpers) => {
       return compiled.evaluate({ ...state, ...helpers, t }); // ALWAYS returns a number
@@ -167,13 +226,6 @@ export class System {
     this.helperDependencies[lhs] = this.extractDependencies(rhs);
   }
 
-  public evaluateAll(): Record<string, number> {
-    const helpersEvaluated = this.evaluateHelpers();
-    const result: Record<string, number> = {};
-    for (const [variable, fn] of Object.entries(this.variableFnMap))
-      result[variable] = fn(this.state, this.t, helpersEvaluated);
-    return { ...helpersEvaluated, ...result };
-  }
 
   private extractDependencies(expr: string): Set<string> {
     const deps = new Set<string>();
@@ -187,53 +239,4 @@ export class System {
     }
     return deps;
   }
-
-  getVariables(): string[] { return Object.keys(this.variableFnMap).sort(); }
-  getHelpers(): string[] { return Object.keys(this.helperFnMap).sort(); }
-
-  setState(state: Record<string, number>, t?: number) {
-    this.state = { ...state };
-    if (t !== undefined) this.t = t;
-  }
-
-  getState(): Record<string, number> { return { ...this.state }; }
-
-  evaluateVar(name: string): number {
-
-    // first check helpers (aliases)
-    if (this.helperFnMap[name]) return this.helperFnMap[name](this.state, this.t, this.evaluateHelpers());
-    // then canonical variables
-    if (this.variableFnMap[name]) return this.variableFnMap[name](this.state, this.t, this.evaluateHelpers());
-
-    throw new Error(`Unknown variable: ${name}`);
-  }
-
-  private evaluateHelpers(): Record<string, number> {
-    const evaluated: Record<string, number> = {};
-    const visited = new Set<string>();
-
-    const evalHelper = (name: string) => {
-      if (visited.has(name)) return;
-      visited.add(name);
-
-      const deps = this.helperDependencies[name] || new Set();
-      for (const dep of deps) if (this.helperFnMap[dep]) evalHelper(dep);
-
-      const val = this.helperFnMap[name](this.state, this.t, evaluated);
-
-      if (typeof val !== 'number') {
-        throw new Error(`Helper "${name}" evaluated to non-scalar value: ${val}`);
-      }
-
-      evaluated[name] = val;
-    };
-
-    for (const h of Object.keys(this.helperFnMap)) evalHelper(h);
-    return evaluated;
-  }
-}
-
-export function parseSystem(exprs: string[], initialState?: Record<string, number>): System {
-  console.debug("Parsing system with expressions:", exprs);
-  return new System(exprs, initialState);
 }

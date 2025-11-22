@@ -49,6 +49,38 @@
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
 
+    .text-button,
+    .icon-button {
+      border: none;
+      padding: 0.75em 1em;
+      font-size: 1rem;
+      cursor: pointer;
+      margin: 4px;
+      stroke: white;
+    }
+
+    .text-button {
+      flex: 1;
+      /* fills remaining space */
+      background: #0078d4;
+      color: white;
+      text-align: left;
+      /* optional */
+    }
+
+    .icon-button {
+      background: #005a9e;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon-button>img {
+      width: 20px;
+      transform: rotate(-90deg) scaleX(-1);
+    }
+
     button {
       padding: 10px 16px;
       font-size: 1rem;
@@ -58,7 +90,6 @@
       color: white;
       cursor: pointer;
       transition: background 0.2s;
-      width: 100%;
     }
 
     button:hover {
@@ -94,19 +125,29 @@
       justify-self: center;
 
     }
+
+    .button-bar {
+      display: flex;
+      flex-direction: row;
+    }
   </style>
 </head>
 
 <body>
   <div class="main">
     <div class="controls">
-      <math-field id="eq1">\frac{dx}{dt}=\sigma\left(y-x\right)</math-field>
-      <math-field id="eq2">\frac{dy}{dt}=x\left(\rho-z\right)-y</math-field>
-      <math-field id="eq3">\frac{dz}{dt}=x y-\beta z</math-field>
-      <math-field id="eq4">\rho=28</math-field>
-      <math-field id="eq5">\sigma=10</math-field>
-      <math-field id="eq6">\beta=\frac83</math-field>
-      <button id="playBtn">Play</button>
+      <math-field id="eq1"></math-field>
+      <math-field id="eq2"></math-field>
+      <math-field id="eq3"></math-field>
+      <math-field id="eq4"></math-field>
+      <math-field id="eq5"></math-field>
+      <math-field id="eq6"></math-field>
+
+      <div class="button-bar">
+        <button class="text-button" id="playBtn">Play</button>
+        <button class="icon-button" id="refreshBtn"><img  src="refresh.svg"></img></button>
+      </div>
+
       <div id="initial-conditions" style="margin-top: 1em;">
         <h3>Initial Conditions</h3>
         <form id="initial-form" style="display: flex; flex-direction: column; gap: 6px;"></form>
